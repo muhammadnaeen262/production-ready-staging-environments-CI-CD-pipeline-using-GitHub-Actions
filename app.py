@@ -1,31 +1,33 @@
-from flask import Flask, request, jsonify
+import app
+import pytest
 
-app = Flask(__name__)
+@pytest.fixture
+def client():
+    app.app.config['TESTING'] = True
+    with app.app.test_client() as client:
+        yield client
 
-@app.route('/add')
-def add():
-    a = request.args.get('a', default=0, type=float)
-    b = request.args.get('b', default=0, type=float)
-    return jsonify({'result': a + b})
-@app.route('/subtract')
-def subtract():
-    a = request.args.get('a', default=0, type=float)
-    b = request.args.get('b', default=0, type=float)
-    return jsonify({'result': a - b})
+def test_add(client):
+    res = client.get('/add?a=2&b=3')
+    assert res.status_code == 200
+    assert res.get_json() == {'result': 5.0}
 
-@app.route('/multiply')
-def multiply():
-    a = request.args.get('a', default=0, type=float)
-    b = request.args.get('b', default=0, type=float)
-    return jsonify({'result': a * b})
+def test_subtract(client):
+    res = client.get('/subtract?a=10&b=4')
+    assert res.status_code == 200
+    assert res.get_json() == {'result': 6.0}
 
-@app.route('/divide')
-def divide():
-    a = request.args.get('a', default=0, type=float)
-    b = request.args.get('b', default=1, type=float)
-    if b == 0:
-        return jsonify({'error': 'Division by zero!'}), 400
-    return jsonify({'result': a / b})
+def test_multiply(client):
+    res = client.get('/multiply?a=6&b=7')
+    assert res.status_code == 200
+    assert res.get_json() == {'result': 42.0}
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+def test_divide(client):
+    res = client.get('/divide?a=8&b=2')
+    assert res.status_code == 200
+    assert res.get_json() == {'result': 4.0}
+
+def test_divide_by_zero(client):
+    res = client.get('/divide?a=5&b=0')
+    assert res.status_code == 400
+    assert res.get_json() == {'error': 'Division by zero!'}
