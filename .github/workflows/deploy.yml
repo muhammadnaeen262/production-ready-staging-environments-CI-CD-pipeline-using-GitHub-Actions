@@ -16,34 +16,40 @@ on:
 
 jobs:
   build-deploy:
-    runs-on: self-hosted  # Use a local runner connected to Minikube
-    env:
-      IMAGE_NAME: calculator
-      DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
-      DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
+    runs-on: self-hosted  # your local runner with Docker + kubectl + Minikube
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set Docker credentials as env vars
+      run: |
+        echo "DOCKER_USER=${{ secrets.DOCKER_USERNAME }}" >> $GITHUB_ENV
+        echo "DOCKER_PASS=${{ secrets.DOCKER_PASSWORD }}" >> $GITHUB_ENV
+
     - name: Log in to Docker Hub
-      run: echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+      run: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
     - name: Set Image Tag
       id: tag
       run: |
-        TAG=${{ github.event.inputs.environment == 'production' && 'latest' || 'staging' }}
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          TAG=${{ github.event.inputs.environment }}
+        else
+          TAG="staging"
+        fi
+        echo "IMAGE_TAG=$DOCKER_USER/calculator:$TAG" >> $GITHUB_ENV
         echo "TAG=$TAG" >> $GITHUB_ENV
 
     - name: Build Docker image
-      run: docker build -t $DOCKER_USER/$IMAGE_NAME:$TAG .
+      run: docker build -t $IMAGE_TAG .
 
     - name: Push Docker image
-      run: docker push $DOCKER_USER/$IMAGE_NAME:$TAG
+      run: docker push $IMAGE_TAG
 
     - name: Deploy to Kubernetes
       run: |
-        kubectl apply -n ${{ github.event.inputs.environment }} -f k8s/deployment-${{ github.event.inputs.environment }}.yaml
-        kubectl apply -n ${{ github.event.inputs.environment }} -f k8s/service-${{ github.event.inputs.environment }}.yaml
+        kubectl apply -n $TAG -f k8s/deployment-$TAG.yaml
+        kubectl apply -n $TAG -f k8s/service-$TAG.yaml
 
     - name: Show service URL
-      run: minikube service calculator-${{ github.event.inputs.environment }} -n ${{ github.event.inputs.environment }} --url
+      run: minikube service calculator-$TAG -n $TAG --url
