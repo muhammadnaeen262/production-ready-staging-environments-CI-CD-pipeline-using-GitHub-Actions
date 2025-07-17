@@ -1,0 +1,49 @@
+name: CI/CD to Minikube
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Choose deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  build-deploy:
+    runs-on: self-hosted  # Use a local runner connected to Minikube
+    env:
+      IMAGE_NAME: calculator
+      DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      run: echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+
+    - name: Set Image Tag
+      id: tag
+      run: |
+        TAG=${{ github.event.inputs.environment == 'production' && 'latest' || 'staging' }}
+        echo "TAG=$TAG" >> $GITHUB_ENV
+
+    - name: Build Docker image
+      run: docker build -t $DOCKER_USER/$IMAGE_NAME:$TAG .
+
+    - name: Push Docker image
+      run: docker push $DOCKER_USER/$IMAGE_NAME:$TAG
+
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl apply -n ${{ github.event.inputs.environment }} -f k8s/deployment-${{ github.event.inputs.environment }}.yaml
+        kubectl apply -n ${{ github.event.inputs.environment }} -f k8s/service-${{ github.event.inputs.environment }}.yaml
+
+    - name: Show service URL
+      run: minikube service calculator-${{ github.event.inputs.environment }} -n ${{ github.event.inputs.environment }} --url
